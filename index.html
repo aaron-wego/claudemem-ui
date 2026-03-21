@@ -374,6 +374,26 @@
       );
     });
 
+    // ── Date range delete ─────────────────────────────────────────────────────────
+    document.getElementById("btn-delete-range").addEventListener("click", () => {
+      const { project, from, to, total } = state;
+      showModal(
+        "Delete by date range",
+        `Delete ${total} observation${total === 1 ? "" : "s"} from "${project}" between ${from} and ${to}? A backup of your database will be created first.`,
+        async () => {
+          await apiFetch("/api/observations/range", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project, from, to }),
+          });
+          state.offset = 0;
+          state.selectedIds.clear();
+          updateSelectionUI();
+          await loadObservations(false);
+        }
+      );
+    });
+
     // ── Init ─────────────────────────────────────────────────────────────────────
     (async () => {
       await loadProjects();
