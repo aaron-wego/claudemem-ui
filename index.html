@@ -165,11 +165,6 @@
     };
     const LIMIT = 50;
 
-    // ── Utility: stub for updateSelectionUI (will be replaced in Task 11) ─────────
-    function updateSelectionUI() {
-      // implemented in Task 11 — stub keeps loadObservations from throwing
-    }
-
     // ── API helpers ───────────────────────────────────────────────────────────────
     async function apiFetch(path, options = {}) {
       const res = await fetch(path, options);
@@ -233,15 +228,6 @@
       `;
       card.querySelector(".card-checkbox").addEventListener("change", e => toggleSelection(obs.id, e.target.checked));
       return card;
-    }
-
-    // ── toggleSelection stub (replaced in Task 11) ────────────────────────────────
-    function toggleSelection(id, checked) {
-      if (checked) state.selectedIds.add(id);
-      else state.selectedIds.delete(id);
-      const card = document.querySelector(`.card[data-id="${id}"]`);
-      if (card) card.classList.toggle("selected", checked);
-      updateSelectionUI();
     }
 
     // ── Load observations ────────────────────────────────────────────────────────
@@ -320,6 +306,73 @@
           `<div class="empty-state">No observations found.</div>`;
       }
     }
+
+    // ── Selection ────────────────────────────────────────────────────────────────
+    function toggleSelection(id, checked) {
+      if (checked) state.selectedIds.add(id);
+      else state.selectedIds.delete(id);
+      const card = document.querySelector(`.card[data-id="${id}"]`);
+      if (card) card.classList.toggle("selected", checked);
+      updateSelectionUI();
+    }
+
+    function updateSelectionUI() {
+      const n = state.selectedIds.size;
+      const bar = document.getElementById("action-bar");
+      bar.classList.toggle("visible", n > 0);
+      document.getElementById("selection-count").textContent = `${n} selected`;
+      document.getElementById("btn-delete-selected").textContent = `Delete selected (${n})`;
+    }
+
+    document.getElementById("btn-clear-selection").addEventListener("click", () => {
+      state.selectedIds.clear();
+      document.querySelectorAll(".card.selected").forEach(c => {
+        c.classList.remove("selected");
+        c.querySelector(".card-checkbox").checked = false;
+      });
+      updateSelectionUI();
+    });
+
+    // ── Modal helpers ─────────────────────────────────────────────────────────────
+    function showModal(title, body, onConfirm) {
+      document.getElementById("modal-title").textContent = title;
+      document.getElementById("modal-body").textContent = body;
+      document.getElementById("modal-overlay").classList.add("visible");
+      document.getElementById("modal-confirm").onclick = async () => {
+        hideModal();
+        await onConfirm();
+      };
+    }
+
+    function hideModal() {
+      document.getElementById("modal-overlay").classList.remove("visible");
+    }
+
+    document.getElementById("modal-cancel").addEventListener("click", hideModal);
+    document.getElementById("modal-overlay").addEventListener("click", e => {
+      if (e.target === e.currentTarget) hideModal();
+    });
+
+    // ── Bulk delete (selection) ───────────────────────────────────────────────────
+    document.getElementById("btn-delete-selected").addEventListener("click", () => {
+      const n = state.selectedIds.size;
+      showModal(
+        "Delete observations",
+        `Delete ${n} observation${n === 1 ? "" : "s"}? This cannot be undone.`,
+        async () => {
+          const ids = [...state.selectedIds];
+          await apiFetch("/api/observations/bulk", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids }),
+          });
+          ids.forEach(id => document.querySelector(`.card[data-id="${id}"]`)?.remove());
+          state.selectedIds.clear();
+          state.total -= ids.length;
+          updateSelectionUI();
+        }
+      );
+    });
 
     // ── Init ─────────────────────────────────────────────────────────────────────
     (async () => {
