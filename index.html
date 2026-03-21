@@ -94,6 +94,9 @@
     }
     .btn-icon:hover { color: var(--red); background: var(--red-light); }
 
+    /* List controls */
+    .list-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+
     /* Load more */
     .load-more { text-align: center; padding: 16px 0; }
     .empty-state { text-align: center; padding: 60px 0; color: var(--gray-400); font-size: 14px; }
@@ -135,6 +138,9 @@
 
   <!-- Main -->
   <div class="main">
+    <div class="list-controls">
+      <button class="btn btn-outline" id="btn-select-all">Select all</button>
+    </div>
     <div id="observation-list"></div>
     <div class="load-more" id="load-more-container" style="display:none">
       <button class="btn btn-outline" id="btn-load-more">Load more</button>
@@ -323,6 +329,16 @@
       document.getElementById("selection-count").textContent = `${n} selected`;
       document.getElementById("btn-delete-selected").textContent = `Delete selected (${n})`;
     }
+
+    document.getElementById("btn-select-all").addEventListener("click", () => {
+      document.querySelectorAll(".card").forEach(card => {
+        const id = parseInt(card.dataset.id, 10);
+        state.selectedIds.add(id);
+        card.classList.add("selected");
+        card.querySelector(".card-checkbox").checked = true;
+      });
+      updateSelectionUI();
+    });
 
     document.getElementById("btn-clear-selection").addEventListener("click", () => {
       state.selectedIds.clear();
