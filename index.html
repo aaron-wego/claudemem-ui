@@ -300,6 +300,27 @@
       await loadObservations(true);
     });
 
+    // ── Single delete ────────────────────────────────────────────────────────────
+    function startSingleDelete(id) {
+      document.getElementById(`confirm-${id}`).style.display = "flex";
+    }
+
+    function cancelSingleDelete(id) {
+      document.getElementById(`confirm-${id}`).style.display = "none";
+    }
+
+    async function confirmSingleDelete(id) {
+      await apiFetch(`/api/observations/${id}`, { method: "DELETE" });
+      document.querySelector(`.card[data-id="${id}"]`).remove();
+      state.selectedIds.delete(id);
+      state.total--;
+      updateSelectionUI();
+      if (document.querySelectorAll(".card").length === 0) {
+        document.getElementById("observation-list").innerHTML =
+          `<div class="empty-state">No observations found.</div>`;
+      }
+    }
+
     // ── Init ─────────────────────────────────────────────────────────────────────
     (async () => {
       await loadProjects();
