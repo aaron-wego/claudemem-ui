@@ -41,8 +41,8 @@ export function createApp(db) {
         const project = url.searchParams.get("project");
         const from    = url.searchParams.get("from");
         const to      = url.searchParams.get("to");
-        const offset  = parseInt(url.searchParams.get("offset") ?? "0");
-        const limit   = parseInt(url.searchParams.get("limit")  ?? "50");
+        const offset  = parseInt(url.searchParams.get("offset") ?? "0", 10) || 0;
+        const limit   = parseInt(url.searchParams.get("limit")  ?? "50", 10) || 50;
 
         const conditions = [];
         const params = {};
