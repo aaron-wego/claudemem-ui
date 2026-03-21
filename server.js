@@ -15,10 +15,33 @@ export function getDbPath() {
   throw new Error(`No DB found in ${dir}. Set CLAUDE_MEM_DIR to override.`);
 }
 
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 export function createApp(db) {
   return {
     async fetch(req) {
-      return new Response("Not implemented", { status: 501 });
+      const url = new URL(req.url);
+      const path = url.pathname;
+
+      // GET /api/projects
+      if (req.method === "GET" && path === "/api/projects") {
+        const rows = db.query(
+          `SELECT project, COUNT(*) as count FROM observations GROUP BY project ORDER BY count DESC`
+        ).all();
+        return json(rows);
+      }
+
+      // Serve index.html
+      if (req.method === "GET" && (path === "/" || path === "/index.html")) {
+        return new Response(Bun.file(import.meta.dir + "/index.html"));
+      }
+
+      return json({ error: "Not found" }, 404);
     },
   };
 }
