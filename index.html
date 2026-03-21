@@ -269,10 +269,36 @@
       updateRangeDeleteButton();
     }
 
-    // ── updateRangeDeleteButton stub (replaced in Task 9) ─────────────────────────
+    // ── Filter event handlers ────────────────────────────────────────────────────
     function updateRangeDeleteButton() {
-      // implemented in Task 9
+      const btn = document.getElementById("btn-delete-range");
+      btn.disabled = !(state.project && state.from && state.to);
     }
+
+    async function applyFilters() {
+      state.offset = 0;
+      state.selectedIds.clear();
+      updateSelectionUI();
+      await loadObservations(false);
+    }
+
+    document.getElementById("project-filter").addEventListener("change", e => {
+      state.project = e.target.value;
+      applyFilters();
+    });
+    document.getElementById("date-from").addEventListener("change", e => {
+      state.from = e.target.value;
+      applyFilters();
+    });
+    document.getElementById("date-to").addEventListener("change", e => {
+      state.to = e.target.value;
+      applyFilters();
+    });
+
+    document.getElementById("btn-load-more").addEventListener("click", async () => {
+      state.offset += LIMIT;
+      await loadObservations(true);
+    });
 
     // ── Init ─────────────────────────────────────────────────────────────────────
     (async () => {
