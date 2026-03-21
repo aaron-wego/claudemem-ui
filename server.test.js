@@ -102,6 +102,38 @@ test("GET /api/observations respects limit and offset", async () => {
   expect(body.hasMore).toBe(true);
 });
 
+test("DELETE /api/observations/bulk deletes given IDs", async () => {
+  const db = makeDb();
+  seed(db, [
+    { $project: "p", $type: "discovery", $title: "A", $subtitle: null, $created_at: "2026-03-21T00:00:00Z", $created_at_epoch: 1000 },
+    { $project: "p", $type: "discovery", $title: "B", $subtitle: null, $created_at: "2026-03-21T00:00:00Z", $created_at_epoch: 2000 },
+    { $project: "p", $type: "discovery", $title: "C", $subtitle: null, $created_at: "2026-03-21T00:00:00Z", $created_at_epoch: 3000 },
+  ]);
+  const ids = db.query("SELECT id FROM observations ORDER BY id").all().map(r => r.id);
+  const app = createApp(db);
+  const res = await app.fetch(new Request("http://localhost/api/observations/bulk", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: [ids[0], ids[1]] }),
+  }));
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.deleted).toBe(2);
+  const remaining = db.query("SELECT COUNT(*) as n FROM observations").get().n;
+  expect(remaining).toBe(1);
+});
+
+test("DELETE /api/observations/bulk returns 400 for empty ids", async () => {
+  const db = makeDb();
+  const app = createApp(db);
+  const res = await app.fetch(new Request("http://localhost/api/observations/bulk", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: [] }),
+  }));
+  expect(res.status).toBe(400);
+});
+
 test("DELETE /api/observations/:id removes the observation", async () => {
   const db = makeDb();
   seed(db, [

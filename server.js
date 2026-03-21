@@ -65,6 +65,15 @@ export function createApp(db) {
         return json({ items, total, offset, limit, hasMore: offset + items.length < total });
       }
 
+      // DELETE /api/observations/bulk
+      if (req.method === "DELETE" && path === "/api/observations/bulk") {
+        const { ids } = await req.json();
+        if (!Array.isArray(ids) || ids.length === 0) return json({ error: "ids must be a non-empty array" }, 400);
+        const placeholders = ids.map(() => "?").join(", ");
+        const result = db.run(`DELETE FROM observations WHERE id IN (${placeholders})`, ids);
+        return json({ deleted: result.changes });
+      }
+
       // DELETE /api/observations/:id  (numeric IDs only)
       const singleDeleteMatch = path.match(/^\/api\/observations\/(\d+)$/);
       if (req.method === "DELETE" && singleDeleteMatch) {
