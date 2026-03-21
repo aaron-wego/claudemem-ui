@@ -36,6 +36,35 @@ export function createApp(db) {
         return json(rows);
       }
 
+      // GET /api/observations
+      if (req.method === "GET" && path === "/api/observations") {
+        const project = url.searchParams.get("project");
+        const from    = url.searchParams.get("from");
+        const to      = url.searchParams.get("to");
+        const offset  = parseInt(url.searchParams.get("offset") ?? "0");
+        const limit   = parseInt(url.searchParams.get("limit")  ?? "50");
+
+        const conditions = [];
+        const params = {};
+        if (project) { conditions.push("project = $project"); params.$project = project; }
+        if (from)    { conditions.push("date(created_at) >= date($from)"); params.$from = from; }
+        if (to)      { conditions.push("date(created_at) <= date($to)");   params.$to   = to;   }
+
+        const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+        const total = db.query(`SELECT COUNT(*) as n FROM observations ${where}`)
+                        .get(params).n;
+
+        const items = db.query(
+          `SELECT id, project, type, title, subtitle, created_at, created_at_epoch
+           FROM observations ${where}
+           ORDER BY created_at_epoch DESC
+           LIMIT $limit OFFSET $offset`
+        ).all({ ...params, $limit: limit, $offset: offset });
+
+        return json({ items, total, offset, limit, hasMore: offset + items.length < total });
+      }
+
       // Serve index.html
       if (req.method === "GET" && (path === "/" || path === "/index.html")) {
         return new Response(Bun.file(import.meta.dir + "/index.html"));
