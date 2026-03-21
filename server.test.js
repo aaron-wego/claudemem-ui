@@ -1,5 +1,8 @@
 import { test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { createApp } from "./server.js";
 
 const SCHEMA = `
@@ -152,6 +155,42 @@ test("DELETE /api/observations/:id returns 404 for unknown id", async () => {
   const app = createApp(db);
   const res = await app.fetch(new Request("http://localhost/api/observations/9999", { method: "DELETE" }));
   expect(res.status).toBe(404);
+});
+
+test("DELETE /api/observations/range deletes matching rows and returns count", async () => {
+  const db = makeDb();
+  seed(db, [
+    { $project: "proj", $type: "discovery", $title: "Old",     $subtitle: null, $created_at: "2026-03-10T00:00:00Z", $created_at_epoch: 1000 },
+    { $project: "proj", $type: "discovery", $title: "InRange", $subtitle: null, $created_at: "2026-03-15T00:00:00Z", $created_at_epoch: 2000 },
+    { $project: "proj", $type: "discovery", $title: "New",     $subtitle: null, $created_at: "2026-03-20T00:00:00Z", $created_at_epoch: 3000 },
+  ]);
+  const tmpDir = mkdtempSync(join(tmpdir(), "cm-test-"));
+  const fakeDbPath = join(tmpDir, "claude-mem.db");
+  writeFileSync(fakeDbPath, "");
+
+  const app = createApp(db, fakeDbPath);
+  const res = await app.fetch(new Request("http://localhost/api/observations/range", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project: "proj", from: "2026-03-14", to: "2026-03-16" }),
+  }));
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.deleted).toBe(1);
+  const remaining = db.query("SELECT COUNT(*) as n FROM observations").get().n;
+  expect(remaining).toBe(2);
+  rmSync(tmpDir, { recursive: true });
+});
+
+test("DELETE /api/observations/range returns 400 for missing fields", async () => {
+  const db = makeDb();
+  const app = createApp(db, "/tmp/fake.db");
+  const res = await app.fetch(new Request("http://localhost/api/observations/range", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project: "proj", from: "2026-03-14" }),
+  }));
+  expect(res.status).toBe(400);
 });
 
 test("GET /api/projects returns projects with counts", async () => {

@@ -22,7 +22,7 @@ function json(data, status = 200) {
   });
 }
 
-export function createApp(db) {
+export function createApp(db, dbPath = null) {
   return {
     async fetch(req) {
       const url = new URL(req.url);
@@ -65,6 +65,23 @@ export function createApp(db) {
         return json({ items, total, offset, limit, hasMore: offset + items.length < total });
       }
 
+      // DELETE /api/observations/range
+      if (req.method === "DELETE" && path === "/api/observations/range") {
+        const { project, from, to } = await req.json();
+        if (!project || !from || !to) return json({ error: "project, from, and to are required" }, 400);
+
+        if (dbPath && existsSync(dbPath)) {
+          const ts = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+          copyFileSync(dbPath, `${dbPath}.bak.${ts}`);
+        }
+
+        const result = db.run(
+          `DELETE FROM observations WHERE project = $project AND date(created_at) BETWEEN date($from) AND date($to)`,
+          { $project: project, $from: from, $to: to }
+        );
+        return json({ deleted: result.changes });
+      }
+
       // DELETE /api/observations/bulk
       if (req.method === "DELETE" && path === "/api/observations/bulk") {
         const { ids } = await req.json();
@@ -96,8 +113,9 @@ export function createApp(db) {
 
 // Entry point — only runs when executed directly, not when imported by tests
 if (import.meta.main) {
-  const db = new Database(getDbPath(), { readonly: false });
-  const port = parseInt(process.env.PORT ?? "37778");
-  const server = Bun.serve({ port, ...createApp(db) });
+  const dbPath = getDbPath();
+  const db = new Database(dbPath, { readwrite: true });
+  const port = parseInt(process.env.PORT ?? "37778", 10);
+  const server = Bun.serve({ port, ...createApp(db, dbPath) });
   console.log(`claudemem-ui running at http://localhost:${server.port}`);
 }
