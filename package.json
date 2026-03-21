@@ -1,0 +1,8 @@
+{
+  "name": "claudemem-ui",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "bun server.js",
+    "test": "bun test server.test.js"
+  }
+}
