@@ -366,10 +366,10 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ids }),
           });
-          ids.forEach(id => document.querySelector(`.card[data-id="${id}"]`)?.remove());
           state.selectedIds.clear();
-          state.total -= ids.length;
+          state.offset = 0;
           updateSelectionUI();
+          await loadObservations(false);
         }
       );
     });
