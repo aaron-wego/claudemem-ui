@@ -65,6 +65,16 @@ export function createApp(db) {
         return json({ items, total, offset, limit, hasMore: offset + items.length < total });
       }
 
+      // DELETE /api/observations/:id  (numeric IDs only)
+      const singleDeleteMatch = path.match(/^\/api\/observations\/(\d+)$/);
+      if (req.method === "DELETE" && singleDeleteMatch) {
+        const id = parseInt(singleDeleteMatch[1], 10);
+        const existing = db.query("SELECT id FROM observations WHERE id = $id").get({ $id: id });
+        if (!existing) return json({ error: "Not found" }, 404);
+        db.run("DELETE FROM observations WHERE id = $id", { $id: id });
+        return json({ deleted: id });
+      }
+
       // Serve index.html
       if (req.method === "GET" && (path === "/" || path === "/index.html")) {
         return new Response(Bun.file(import.meta.dir + "/index.html"));

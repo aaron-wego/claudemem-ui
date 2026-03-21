@@ -102,6 +102,26 @@ test("GET /api/observations respects limit and offset", async () => {
   expect(body.hasMore).toBe(true);
 });
 
+test("DELETE /api/observations/:id removes the observation", async () => {
+  const db = makeDb();
+  seed(db, [
+    { $project: "p", $type: "discovery", $title: "ToDelete", $subtitle: null, $created_at: "2026-03-21T00:00:00Z", $created_at_epoch: 1000 },
+  ]);
+  const id = db.query("SELECT id FROM observations").get().id;
+  const app = createApp(db);
+  const res = await app.fetch(new Request(`http://localhost/api/observations/${id}`, { method: "DELETE" }));
+  expect(res.status).toBe(200);
+  const remaining = db.query("SELECT COUNT(*) as n FROM observations").get().n;
+  expect(remaining).toBe(0);
+});
+
+test("DELETE /api/observations/:id returns 404 for unknown id", async () => {
+  const db = makeDb();
+  const app = createApp(db);
+  const res = await app.fetch(new Request("http://localhost/api/observations/9999", { method: "DELETE" }));
+  expect(res.status).toBe(404);
+});
+
 test("GET /api/projects returns projects with counts", async () => {
   const db = makeDb();
   seed(db, [
