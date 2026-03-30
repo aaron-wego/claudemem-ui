@@ -196,16 +196,16 @@ test("DELETE /api/observations/range returns 400 for missing fields", async () =
 test("GET /api/projects returns projects with counts", async () => {
   const db = makeDb();
   seed(db, [
-    { $project: "wego-fares", $type: "discovery", $title: "T1", $subtitle: null, $created_at: "2026-03-21T00:00:00Z", $created_at_epoch: 1000 },
-    { $project: "wego-fares", $type: "feature",   $title: "T2", $subtitle: null, $created_at: "2026-03-21T00:00:00Z", $created_at_epoch: 1001 },
-    { $project: "hyperloop",  $type: "discovery", $title: "T3", $subtitle: null, $created_at: "2026-03-21T00:00:00Z", $created_at_epoch: 1002 },
+    { $project: "acme-flights", $type: "discovery", $title: "T1", $subtitle: null, $created_at: "2026-03-21T00:00:00Z", $created_at_epoch: 1000 },
+    { $project: "acme-flights", $type: "feature",   $title: "T2", $subtitle: null, $created_at: "2026-03-21T00:00:00Z", $created_at_epoch: 1001 },
+    { $project: "acme-hotels",  $type: "discovery", $title: "T3", $subtitle: null, $created_at: "2026-03-21T00:00:00Z", $created_at_epoch: 1002 },
   ]);
   const app = createApp(db);
   const res = await app.fetch(new Request("http://localhost/api/projects"));
   expect(res.status).toBe(200);
   const body = await res.json();
   expect(body).toEqual([
-    { project: "wego-fares", count: 2 },
-    { project: "hyperloop",  count: 1 },
+    { project: "acme-flights", count: 2 },
+    { project: "acme-hotels",  count: 1 },
   ]);
 });
