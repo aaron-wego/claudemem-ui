@@ -31,7 +31,13 @@ export function createApp(db, dbPath = null) {
       // GET /api/projects
       if (req.method === "GET" && path === "/api/projects") {
         const rows = db.query(
-          `SELECT project, COUNT(*) as count FROM observations GROUP BY project ORDER BY count DESC`
+          `SELECT project, SUM(cnt) as count FROM (
+             SELECT project, COUNT(*) as cnt FROM observations WHERE project IS NOT NULL AND project != '' GROUP BY project
+             UNION ALL
+             SELECT project, COUNT(*) as cnt FROM session_summaries WHERE project IS NOT NULL AND project != '' GROUP BY project
+             UNION ALL
+             SELECT project, COUNT(*) as cnt FROM sdk_sessions WHERE project IS NOT NULL AND project != '' GROUP BY project
+           ) GROUP BY project ORDER BY count DESC`
         ).all();
         return json(rows);
       }
@@ -65,6 +71,37 @@ export function createApp(db, dbPath = null) {
         return json({ items, total, offset, limit, hasMore: offset + items.length < total });
       }
 
+      // DELETE /api/project — wipe all data for a project (no date range)
+      if (req.method === "DELETE" && path === "/api/project") {
+        const { project } = await req.json();
+        if (!project) return json({ error: "project is required" }, 400);
+
+        if (dbPath && existsSync(dbPath)) {
+          const ts = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+          copyFileSync(dbPath, `${dbPath}.bak.${ts}`);
+        }
+
+        db.run("PRAGMA foreign_keys = ON");
+        db.run(
+          `DELETE FROM user_prompts WHERE id IN (
+            SELECT u.id FROM user_prompts u
+            JOIN sdk_sessions s ON s.content_session_id = u.content_session_id
+            WHERE s.project = $project)`,
+          { $project: project }
+        );
+        db.run(
+          `DELETE FROM pending_messages WHERE id IN (
+            SELECT p.id FROM pending_messages p
+            JOIN sdk_sessions s ON s.id = p.session_db_id
+            WHERE s.project = $project)`,
+          { $project: project }
+        );
+        const obsResult = db.run(`DELETE FROM observations WHERE project = $project`, { $project: project });
+        db.run(`DELETE FROM session_summaries WHERE project = $project`, { $project: project });
+        db.run(`DELETE FROM sdk_sessions WHERE project = $project`, { $project: project });
+        return json({ deleted: obsResult.changes });
+      }
+
       // DELETE /api/observations/range
       if (req.method === "DELETE" && path === "/api/observations/range") {
         const { project, from, to } = await req.json();
@@ -75,11 +112,24 @@ export function createApp(db, dbPath = null) {
           copyFileSync(dbPath, `${dbPath}.bak.${ts}`);
         }
 
-        const result = db.run(
+        db.run("PRAGMA foreign_keys = ON");
+        const obsResult = db.run(
           `DELETE FROM observations WHERE project = $project AND date(created_at) BETWEEN date($from) AND date($to)`,
           { $project: project, $from: from, $to: to }
         );
-        return json({ deleted: result.changes });
+        db.run(
+          `DELETE FROM session_summaries WHERE project = $project AND date(created_at) BETWEEN date($from) AND date($to)`,
+          { $project: project, $from: from, $to: to }
+        );
+        // Delete sessions that now have no remaining observations or summaries.
+        // FK cascades handle user_prompts and pending_messages automatically.
+        db.run(
+          `DELETE FROM sdk_sessions WHERE project = $project
+           AND memory_session_id NOT IN (SELECT DISTINCT memory_session_id FROM observations WHERE project = $project)
+           AND memory_session_id NOT IN (SELECT DISTINCT memory_session_id FROM session_summaries WHERE project = $project)`,
+          { $project: project }
+        );
+        return json({ deleted: obsResult.changes });
       }
 
       // DELETE /api/observations/bulk
@@ -87,7 +137,17 @@ export function createApp(db, dbPath = null) {
         const { ids } = await req.json();
         if (!Array.isArray(ids) || ids.length === 0) return json({ error: "ids must be a non-empty array" }, 400);
         const placeholders = ids.map(() => "?").join(", ");
+        db.run("PRAGMA foreign_keys = ON");
+        const affected = db.query(`SELECT DISTINCT project FROM observations WHERE id IN (${placeholders})`).all(ids);
         const result = db.run(`DELETE FROM observations WHERE id IN (${placeholders})`, ids);
+        for (const { project } of affected) {
+          db.run(
+            `DELETE FROM sdk_sessions WHERE project = ?
+             AND memory_session_id NOT IN (SELECT DISTINCT memory_session_id FROM observations WHERE project = ?)
+             AND memory_session_id NOT IN (SELECT DISTINCT memory_session_id FROM session_summaries WHERE project = ?)`,
+            [project, project, project]
+          );
+        }
         return json({ deleted: result.changes });
       }
 
@@ -95,9 +155,16 @@ export function createApp(db, dbPath = null) {
       const singleDeleteMatch = path.match(/^\/api\/observations\/(\d+)$/);
       if (req.method === "DELETE" && singleDeleteMatch) {
         const id = parseInt(singleDeleteMatch[1], 10);
-        const existing = db.query("SELECT id FROM observations WHERE id = $id").get({ $id: id });
+        const existing = db.query("SELECT id, project FROM observations WHERE id = $id").get({ $id: id });
         if (!existing) return json({ error: "Not found" }, 404);
+        db.run("PRAGMA foreign_keys = ON");
         db.run("DELETE FROM observations WHERE id = $id", { $id: id });
+        db.run(
+          `DELETE FROM sdk_sessions WHERE project = ?
+           AND memory_session_id NOT IN (SELECT DISTINCT memory_session_id FROM observations WHERE project = ?)
+           AND memory_session_id NOT IN (SELECT DISTINCT memory_session_id FROM session_summaries WHERE project = ?)`,
+          [existing.project, existing.project, existing.project]
+        );
         return json({ deleted: id });
       }
 

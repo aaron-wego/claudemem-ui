@@ -34,11 +34,14 @@ CLAUDE_MEM_DIR=/path/to/data bun server.js
 
 ## Features
 
-- **Filter** by project and date range
+- **Filter** by project and date range (defaults to today)
 - **Select all** loaded cards
 - **Delete single** observation (trash icon with inline confirm)
 - **Delete selected** observations (checkboxes + bulk delete modal)
 - **Delete by date range** (creates a DB backup first)
+- **Delete all project data** — shown when a project has no observations but still has session/summary data; wipes all related tables so the project disappears from the `:37777` viewer too
+
+All delete operations cascade across `observations`, `session_summaries`, `sdk_sessions`, `user_prompts`, and `pending_messages`, keeping the `:37777` viewer in sync.
 
 ## Sharing with the team
 

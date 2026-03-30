@@ -185,6 +185,7 @@
     async function loadProjects() {
       const projects = await apiFetch("/api/projects");
       const select = document.getElementById("project-filter");
+      select.innerHTML = `<option value="">All Projects</option>`;
       projects.forEach(({ project, count }) => {
         const opt = document.createElement("option");
         opt.value = project;
@@ -250,7 +251,36 @@
       if (!append) list.innerHTML = "";
 
       if (data.items.length === 0 && !append) {
-        list.innerHTML = `<div class="empty-state">No observations found.</div>`;
+        if (state.project) {
+          list.innerHTML = `
+            <div class="empty-state">
+              <p>No observations for "${state.project}".</p>
+              <p style="margin-top:8px;font-size:12px">Session data may still exist in other tables.</p>
+              <button class="btn btn-danger" style="margin-top:16px" id="btn-delete-project">Delete all project data</button>
+            </div>`;
+          document.getElementById("btn-delete-project").addEventListener("click", () => {
+            showModal(
+              "Delete all project data",
+              `Delete all data for "${state.project}" (sessions, summaries, observations)? A backup will be created first.`,
+              async () => {
+                await apiFetch("/api/project", {
+                  method: "DELETE",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ project: state.project }),
+                });
+                state.project = "";
+                document.getElementById("project-filter").value = "";
+                state.offset = 0;
+                state.selectedIds.clear();
+                updateSelectionUI();
+                await loadProjects();
+                await loadObservations(false);
+              }
+            );
+          });
+        } else {
+          list.innerHTML = `<div class="empty-state">No observations found.</div>`;
+        }
       } else {
         data.items.forEach(obs => list.appendChild(renderCard(obs)));
       }
@@ -385,6 +415,7 @@
           state.selectedIds.clear();
           state.offset = 0;
           updateSelectionUI();
+          await loadProjects();
           await loadObservations(false);
         }
       );
@@ -405,6 +436,7 @@
           state.offset = 0;
           state.selectedIds.clear();
           updateSelectionUI();
+          await loadProjects();
           await loadObservations(false);
         }
       );
@@ -412,6 +444,11 @@
 
     // ── Init ─────────────────────────────────────────────────────────────────────
     (async () => {
+      const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local time
+      state.from = today;
+      state.to = today;
+      document.getElementById("date-from").value = today;
+      document.getElementById("date-to").value = today;
       await loadProjects();
       state.offset = 0;
       await loadObservations();
