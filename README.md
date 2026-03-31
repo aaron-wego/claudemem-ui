@@ -8,6 +8,7 @@ View, filter, and delete observations from your `~/.claude-mem/` database — th
 
 - [Bun](https://bun.sh) installed
 - claude-mem running (database at `~/.claude-mem/claude-mem.db`)
+- [uv](https://docs.astral.sh/uv/) installed — required for the **Check / Sync Chroma** feature (`brew install uv`). `chromadb` is downloaded automatically on first use; no manual install needed.
 
 ## Start
 
@@ -40,6 +41,7 @@ CLAUDE_MEM_DIR=/path/to/data bun server.js
 - **Delete selected** observations (checkboxes + bulk delete modal)
 - **Delete by date range** (creates a DB backup first)
 - **Delete all project data** — shown when a project has no observations but still has session/summary data; wipes all related tables so the project disappears from the `:37777` viewer too
+- **Check / Sync Chroma** — checks how many Chroma vector embeddings are stale (deleted from SQLite but still in Chroma), then optionally removes them so they no longer surface in Claude's semantic search. Requires `uv`.
 
 All delete operations cascade across `observations`, `session_summaries`, `sdk_sessions`, `user_prompts`, and `pending_messages`, keeping the `:37777` viewer in sync.
 

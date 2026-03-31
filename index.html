@@ -127,6 +127,10 @@
     <label>From <input type="date" id="date-from"></label>
     <label>To <input type="date" id="date-to"></label>
     <button class="btn btn-danger" id="btn-delete-range" disabled>Delete range</button>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+      <span id="chroma-status" style="font-size:12px;color:var(--gray-500)"></span>
+      <button class="btn btn-outline" id="btn-sync-chroma">Check Chroma</button>
+    </div>
   </div>
 
   <!-- Action bar (shown when items are selected) -->
@@ -440,6 +444,76 @@
           await loadObservations(false);
         }
       );
+    });
+
+    // ── Chroma sync ───────────────────────────────────────────────────────────────
+    async function loadChromaStatus() {
+      const statusEl = document.getElementById("chroma-status");
+      const btn = document.getElementById("btn-sync-chroma");
+      statusEl.textContent = "Checking Chroma…";
+      try {
+        const { total, stale, error } = await fetch("/api/chroma/status").then(r => r.json());
+        if (error) { statusEl.textContent = `Chroma: ${error}`; return; }
+        if (stale > 0) {
+          statusEl.textContent = `Chroma: ${stale} stale embedding${stale === 1 ? "" : "s"} (${total} total)`;
+          btn.disabled = false;
+        } else {
+          statusEl.textContent = `Chroma: in sync (${total} embeddings)`;
+          btn.disabled = false;
+        }
+      } catch {
+        statusEl.textContent = "Chroma: unavailable";
+        btn.disabled = true;
+      }
+    }
+
+    document.getElementById("btn-sync-chroma").addEventListener("click", async () => {
+      const statusEl = document.getElementById("chroma-status");
+      const btn = document.getElementById("btn-sync-chroma");
+
+      // First get current stale count for the confirmation message
+      btn.disabled = true;
+      statusEl.textContent = "Checking Chroma…";
+      let staleCount = 0;
+      try {
+        const { stale, error } = await fetch("/api/chroma/status").then(r => r.json());
+        if (error) { statusEl.textContent = `Chroma: ${error}`; btn.disabled = false; return; }
+        staleCount = stale ?? 0;
+      } catch {
+        statusEl.textContent = "Chroma: unavailable";
+        return;
+      }
+
+      if (staleCount === 0) {
+        statusEl.textContent = "Chroma: already in sync";
+        btn.disabled = false;
+        return;
+      }
+
+      showModal(
+        "Sync Chroma",
+        `Remove ${staleCount} stale embedding${staleCount === 1 ? "" : "s"} from the Chroma vector database? These correspond to observations already deleted from SQLite.`,
+        async () => {
+          btn.disabled = true;
+          statusEl.textContent = "Syncing…";
+          try {
+            const res = await fetch("/api/chroma/sync", { method: "POST" });
+            const data = await res.json();
+            if (!res.ok) {
+              statusEl.textContent = `Sync failed: ${data.error}`;
+              btn.disabled = false;
+            } else {
+              statusEl.textContent = `Removed ${data.removed} stale embedding${data.removed === 1 ? "" : "s"}`;
+              await loadChromaStatus();
+            }
+          } catch (e) {
+            statusEl.textContent = `Sync failed: ${e.message}`;
+            btn.disabled = false;
+          }
+        }
+      );
+      // Re-enable button if user cancels the modal
+      document.getElementById("modal-cancel").addEventListener("click", () => { btn.disabled = false; }, { once: true });
     });
 
     // ── Init ─────────────────────────────────────────────────────────────────────

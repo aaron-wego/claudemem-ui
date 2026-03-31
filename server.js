@@ -22,6 +22,80 @@ function json(data, status = 200) {
   });
 }
 
+// ── Chroma sync helpers ──────────────────────────────────────────────────────
+
+const CHROMA_COLLECTION = "cm__claude-mem";
+
+async function runChromaPy(script) {
+  const proc = Bun.spawn(
+    ["uv", "run", "--no-project", "--with", "chromadb", "python3", "-c", script],
+    { stdout: "pipe", stderr: "pipe" }
+  );
+  const [stdout, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    proc.exited,
+  ]);
+  if (code !== 0) {
+    const stderr = await new Response(proc.stderr).text();
+    throw new Error(stderr.trim().split("\n").pop() || `python exited ${code}`);
+  }
+  return JSON.parse(stdout);
+}
+
+function getValidIds(db) {
+  const validObsIds    = new Set(db.query("SELECT id FROM observations").all().map(r => r.id));
+  const validPromptIds = new Set(db.query("SELECT id FROM user_prompts").all().map(r => r.id));
+  return { validObsIds, validPromptIds };
+}
+
+async function getAllChromaIds() {
+  const chromaDir = join(process.env.HOME, ".claude-mem", "chroma");
+  return runChromaPy(`
+import json, sys
+try:
+    import chromadb
+    c = chromadb.PersistentClient(path=${JSON.stringify(chromaDir)})
+    col = c.get_collection(${JSON.stringify(CHROMA_COLLECTION)})
+    print(json.dumps(col.get(include=[])["ids"]))
+except Exception as e:
+    if "does not exist" in str(e).lower():
+        print("[]")
+    else:
+        print(str(e), file=sys.stderr); sys.exit(1)
+`);
+}
+
+async function deleteChromaIds(ids) {
+  if (ids.length === 0) return;
+  const chromaDir = join(process.env.HOME, ".claude-mem", "chroma");
+  return runChromaPy(`
+import json, sys
+try:
+    import chromadb
+    ids = ${JSON.stringify(ids)}
+    c = chromadb.PersistentClient(path=${JSON.stringify(chromaDir)})
+    col = c.get_collection(${JSON.stringify(CHROMA_COLLECTION)})
+    for i in range(0, len(ids), 100):
+        col.delete(ids=ids[i:i+100])
+    print(json.dumps({"removed": len(ids)}))
+except Exception as e:
+    print(str(e), file=sys.stderr); sys.exit(1)
+`);
+}
+
+function findStaleIds(allIds, validObsIds, validPromptIds) {
+  const stale = [];
+  for (const id of allIds) {
+    const obs    = id.match(/^obs_(\d+)_/);
+    const prompt = id.match(/^prompt_(\d+)$/);
+    if (obs    && !validObsIds.has(parseInt(obs[1])))       stale.push(id);
+    else if (prompt && !validPromptIds.has(parseInt(prompt[1]))) stale.push(id);
+  }
+  return stale;
+}
+
+// ── End Chroma helpers ────────────────────────────────────────────────────────
+
 export function createApp(db, dbPath = null) {
   return {
     async fetch(req) {
@@ -168,6 +242,43 @@ export function createApp(db, dbPath = null) {
         return json({ deleted: id });
       }
 
+      // GET /api/chroma/status — count stale embeddings (read-only)
+      if (req.method === "GET" && path === "/api/chroma/status") {
+        try {
+          const { validObsIds, validPromptIds } = getValidIds(db);
+          const allIds = await getAllChromaIds();
+          const staleIds = findStaleIds(allIds, validObsIds, validPromptIds);
+          return json({ total: allIds.length, stale: staleIds.length });
+        } catch (e) {
+          return json({ error: e.message }, 500);
+        }
+      }
+
+      // POST /api/chroma/sync — delete stale embeddings
+      if (req.method === "POST" && path === "/api/chroma/sync") {
+        try {
+          const res = await fetch("http://localhost:37777/api/processing-status",
+            { signal: AbortSignal.timeout(2000) });
+          if (res.ok) {
+            const status = await res.json();
+            const active = status === true || status?.active === true
+              || (typeof status?.count === "number" && status.count > 0)
+              || (Array.isArray(status) && status.length > 0);
+            if (active) return json({ error: "Active sessions in progress — try again shortly" }, 409);
+          }
+        } catch { /* worker unavailable, proceed */ }
+
+        try {
+          const { validObsIds, validPromptIds } = getValidIds(db);
+          const allIds   = await getAllChromaIds();
+          const staleIds = findStaleIds(allIds, validObsIds, validPromptIds);
+          await deleteChromaIds(staleIds);
+          return json({ removed: staleIds.length });
+        } catch (e) {
+          return json({ error: e.message }, 500);
+        }
+      }
+
       // Serve index.html
       if (req.method === "GET" && (path === "/" || path === "/index.html")) {
         return new Response(Bun.file(import.meta.dir + "/index.html"));
@@ -183,6 +294,6 @@ if (import.meta.main) {
   const dbPath = getDbPath();
   const db = new Database(dbPath, { readwrite: true });
   const port = parseInt(process.env.PORT ?? "37778", 10);
-  const server = Bun.serve({ port, ...createApp(db, dbPath) });
+  const server = Bun.serve({ port, idleTimeout: 0, ...createApp(db, dbPath) });
   console.log(`claudemem-ui running at http://localhost:${server.port}`);
 }
