@@ -26,9 +26,10 @@ function json(data, status = 200) {
 
 const CHROMA_COLLECTION = "cm__claude-mem";
 
-async function runChromaPy(script) {
+async function runChromaPy(script, extraDeps = []) {
+  const withArgs = ["chromadb", ...extraDeps].flatMap(d => ["--with", d]);
   const proc = Bun.spawn(
-    ["uv", "run", "--no-project", "--with", "chromadb", "python3", "-c", script],
+    ["uv", "run", "--no-project", ...withArgs, "python3", "-c", script],
     { stdout: "pipe", stderr: "pipe" }
   );
   const [stdout, code] = await Promise.all([
@@ -40,6 +41,10 @@ async function runChromaPy(script) {
     throw new Error(stderr.trim().split("\n").pop() || `python exited ${code}`);
   }
   return JSON.parse(stdout);
+}
+
+function runChromaPyWithOps(script) {
+  return runChromaPy(script, ["chromadb-ops"]);
 }
 
 function getValidIds(db) {
@@ -68,7 +73,7 @@ except Exception as e:
 async function deleteChromaIds(ids) {
   if (ids.length === 0) return;
   const chromaDir = join(process.env.HOME, ".claude-mem", "chroma");
-  return runChromaPy(`
+  return runChromaPyWithOps(`
 import json, sys
 try:
     import chromadb
@@ -77,7 +82,18 @@ try:
     col = c.get_collection(${JSON.stringify(CHROMA_COLLECTION)})
     for i in range(0, len(ids), 100):
         col.delete(ids=ids[i:i+100])
-    print(json.dumps({"removed": len(ids)}))
+    del col, c  # release client before rebuild
+    result = {"removed": len(ids)}
+    # Rebuild HNSW index to prevent corruption after large deletions
+    try:
+        from chroma_ops.hnsw import rebuild_hnsw
+        rebuild_hnsw(${JSON.stringify(chromaDir)},
+                     collection_name=${JSON.stringify(CHROMA_COLLECTION)},
+                     backup=False, yes=True)
+        result["rebuilt"] = True
+    except Exception as e:
+        result["rebuildWarning"] = str(e)
+    print(json.dumps(result))
 except Exception as e:
     print(str(e), file=sys.stderr); sys.exit(1)
 `);
